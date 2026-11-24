@@ -1,0 +1,212 @@
+/*==============================================================================
+  PROJECT:  E-Commerce Product & Inventory Analytics Portfolio
+  TOOL:     Microsoft Power BI Desktop (DAX)
+  FILE:     DAX_Measures_and_Calculations.dax
+  PURPOSE:  30+ Production DAX Measures & Calculated Columns for Executive BI
+==============================================================================*/
+
+// ============================================================================
+// 1. CORE INVENTORY & CATALOG KPI MEASURES
+// ============================================================================
+
+Total SKUs =
+COUNTROWS('Products')
+
+Unique Categories =
+DISTINCTCOUNT('Products'[Category])
+
+Unique Brands =
+DISTINCTCOUNT('Products'[Brand])
+
+Total Stock Units =
+SUM('Products'[Stock])
+
+Total Inventory Value =
+SUMX('Products', 'Products'[Price] * 'Products'[Stock])
+
+Average Unit Price =
+AVERAGE('Products'[Price])
+
+Median Unit Price =
+MEDIAN('Products'[Price])
+
+Weighted Avg Unit Price =
+DIVIDE([Total Inventory Value], [Total Stock Units], 0)
+
+Avg Stock per SKU =
+AVERAGE('Products'[Stock])
+
+Avg Inventory Value per SKU =
+DIVIDE([Total Inventory Value], [Total SKUs], 0)
+
+Price Standard Deviation =
+STDEV.S('Products'[Price])
+
+
+// ============================================================================
+// 2. AVAILABILITY & RISK INTELLIGENCE MEASURES (CALCULATE + FILTER CONTEXT)
+// ============================================================================
+
+In-Stock Inventory Value =
+CALCULATE(
+    [Total Inventory Value],
+    'Products'[Availability] = "in_stock"
+)
+
+In-Stock Share % =
+DIVIDE([In-Stock Inventory Value], [Total Inventory Value], 0)
+
+Pre-Order Pipeline Value =
+CALCULATE(
+    [Total Inventory Value],
+    'Products'[Availability] = "pre_order"
+)
+
+Trapped Capital (OOS w/ Stock) =
+CALCULATE(
+    [Total Inventory Value],
+    'Products'[Availability] = "out_of_stock",
+    'Products'[Stock] > 0
+)
+
+Liquidation Capital (Discontinued) =
+CALCULATE(
+    [Total Inventory Value],
+    'Products'[Availability] = "discontinued",
+    'Products'[Stock] > 0
+)
+
+Total At-Risk Capital =
+[Trapped Capital (OOS w/ Stock)] + [Liquidation Capital (Discontinued)]
+
+At-Risk Capital % =
+DIVIDE([Total At-Risk Capital], [Total Inventory Value], 0)
+
+At-Risk SKU Count =
+CALCULATE(
+    [Total SKUs],
+    'Products'[Availability] IN {"out_of_stock", "discontinued"},
+    'Products'[Stock] > 0
+)
+
+Ultra-Low Price Audit SKUs =
+CALCULATE(
+    [Total SKUs],
+    'Products'[Price] < 50
+)
+
+
+// ============================================================================
+// 3. RANKING, SHARE OF TOTAL & PARETO (ABC) MEASURES
+// ============================================================================
+
+% of Total Inventory Value =
+DIVIDE(
+    [Total Inventory Value],
+    CALCULATE([Total Inventory Value], ALL('Products')),
+    0
+)
+
+% of Category Inventory Value =
+DIVIDE(
+    [Total Inventory Value],
+    CALCULATE([Total Inventory Value], ALLEXCEPT('Products', 'Products'[Category])),
+    0
+)
+
+Category Value Rank =
+RANKX(
+    ALL('Products'[Category]),
+    [Total Inventory Value],
+    ,
+    DESC,
+    DENSE
+)
+
+SKU Value Rank =
+RANKX(
+    ALL('Products'),
+    [Total Inventory Value],
+    ,
+    DESC,
+    DENSE
+)
+
+Cumulative Inventory Value (Pareto) =
+VAR CurrentVal = [Total Inventory Value]
+RETURN
+CALCULATE(
+    [Total Inventory Value],
+    FILTER(
+        ALLSELECTED('Products'),
+        [Total Inventory Value] >= CurrentVal
+    )
+)
+
+Cumulative Value % (Pareto) =
+DIVIDE(
+    [Cumulative Inventory Value (Pareto)],
+    CALCULATE([Total Inventory Value], ALLSELECTED('Products')),
+    0
+)
+
+Top 5 Categories Value =
+CALCULATE(
+    [Total Inventory Value],
+    TOPN(5, ALL('Products'[Category]), [Total Inventory Value], DESC)
+)
+
+Top 5 Categories Share % =
+DIVIDE([Top 5 Categories Value], CALCULATE([Total Inventory Value], ALL('Products')), 0)
+
+
+// ============================================================================
+// 4. DYNAMIC CONDITIONAL FORMATTING & KPI LABELS
+// ============================================================================
+
+Risk Status Color =
+SWITCH(
+    TRUE(),
+    [At-Risk Capital %] >= 0.25, "#D93025",   // Red Alert
+    [At-Risk Capital %] >= 0.10, "#F9AB00",   // Amber Warning
+    "#188038"                                  // Healthy Green
+)
+
+Dynamic Category Title =
+VAR SelectedCat = SELECTEDVALUE('Products'[Category], "All 32 Categories")
+RETURN
+"Inventory & Pricing Performance — " & SelectedCat
+
+
+// ============================================================================
+// 5. CALCULATED COLUMNS (FOR SLICERS & AXIS GROUPING)
+// ============================================================================
+
+/*
+Price Tier =
+SWITCH(
+    TRUE(),
+    'Products'[Price] <= 200, "1. Budget ($1-$200)",
+    'Products'[Price] <= 500, "2. Mid-Range ($201-$500)",
+    'Products'[Price] <= 750, "3. Premium ($501-$750)",
+    "4. Luxury ($751+)"
+)
+
+Stock Bucket =
+SWITCH(
+    TRUE(),
+    'Products'[Stock] <= 200, "Low (<=200)",
+    'Products'[Stock] <= 500, "Moderate (201-500)",
+    'Products'[Stock] <= 800, "High (501-800)",
+    "Surplus (801+)"
+)
+
+Risk Flag =
+SWITCH(
+    TRUE(),
+    'Products'[Availability] = "out_of_stock" && 'Products'[Stock] > 0, "Sync Error: OOS w/ Stock",
+    'Products'[Availability] = "discontinued" && 'Products'[Stock] > 0, "Liquidation Risk",
+    'Products'[Price] < 50, "Pricing Audit (<$50)",
+    "Normal"
+)
+*/
